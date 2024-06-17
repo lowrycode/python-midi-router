@@ -91,17 +91,24 @@ class Arturia:
         # Define constants
         self.NAME = "Arturia"
         self.MIDI_CHANNEL = 3
-        self.KNOB_CC = (102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117)  # Must match values set in Arturia's Midi Control Center
-        self.KNOB_SYSEX_ID = (48, 1, 2, 9, 11, 12, 13, 14, 51, 3, 4, 10, 5, 6, 7, 8)    # Knob ID values used in sysex (converted from hexadecimal to decimal)
-        self.PAD_NOTE_VALUES = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)   # Must match values set in Arturia's Midi Control Center - they correspond to C-1 C#-1 etc.
-        self.PAD_ROTARY_SWITCH = (5, 13)  # Pads used to turn rotary on and off
-        self.PAD_LINKED_TO_KNOB = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 8)  # From 1 to 16 - CHANGE THIS if you wish to link a pad to a different knob
-        self.PAD_COLOURS = (20, 20, 127, 5, 1, 0, 17, 20, 20, 20, 127, 5, 1, 0, 17, 20)  # 0 black, 1 red, 4 green, 5 yellow, 16 blue, 17 magenta, 20 cyan, 127 white
+        self.MIDI_CHANNEL_ORGAN = 1
+        self.KNOB_CC = {"knob1": 102, "knob2": 103, "knob3": 104, "knob4": 105, "knob5": 106, "knob6": 107, "knob7": 108, "knob8": 109, 
+                        "knob9": 110, "knob10": 111, "knob11": 112, "knob12": 113, "knob13": 114, "knob14": 115, "knob15": 116, "knob16": 117}  # Must match values set in Arturia's Midi Control Center
+        self.KNOB_SYSEX_ID = {"knob1": 48, "knob2": 1, "knob3": 2, "knob4": 9, "knob5": 11, "knob6": 12, "knob7": 13, "knob8": 14, 
+                        "knob9": 51, "knob10": 3, "knob11": 4, "knob12": 10, "knob13": 5, "knob14": 6, "knob15": 7, "knob16": 8}    # Knob ID values used in sysex (converted from hexadecimal to decimal)
+        self.PAD_NOTE_VALUES = {"pad1": 0, "pad2": 1, "pad3": 2, "pad4": 3, "pad5": 4, "pad6": 5, "pad7": 6, "pad8": 7, 
+                                "pad9": 8, "pad10": 9, "pad11": 10, "pad12": 11, "pad13": 12, "pad14": 13, "pad15": 14, "pad16": 15}   # Must match values set in Arturia's Midi Control Center - they correspond to C-1 C#-1 etc. - will break _updatePadColour procedure if changed
+        self.PAD_ROTARY_SWITCH = ("pad6", "pad14")  # Pads used to turn rotary on and off
+        self.PAD_LINKED_TO_KNOB = {"pad1": "knob1", "pad2": "knob2", "pad3": "knob3", "pad4": "knob4", "pad5": "knob5", "pad6": "knob6", "pad7": "knob7", "pad8": "knob8", 
+                                   "pad9": "knob9", "pad10": "knob10", "pad11": "knob11", "pad12": "knob12", "pad13": "knob13", "pad14": "knob14", "pad15": "knob15", "pad16": "knob8"}  # From 1 to 16 - CHANGE THIS if you wish to link a pad to a different knob
+        self.PAD_COLOURS = {"pad1": 20, "pad2": 20, "pad3": 127, "pad4": 5, "pad5": 1, "pad6": 0, "pad7": 17, "pad8": 20, 
+                            "pad9": 20, "pad10": 20, "pad11": 127, "pad12": 5, "pad13": 1, "pad14": 0, "pad15": 17, "pad16": 20}  # 0 black, 1 red, 4 green, 5 yellow, 16 blue, 17 magenta, 20 cyan, 127 white
         self.TRANSITION_STEPS = 60  # Must be multiple of 2
         # Define variables
         self.rotary_on = False
-        self.knob_values = [127, 127, 127, 90, 100, 127, 127, 127, 0, 0, 0, 0, 0, 0, 60, 0]   # These default values are edited by this application
-        self.target_knob = 16  # Between 1 and 16 - changed when pressure pads are used to trigger a transition
+        self.knob_values = {"knob1": 127, "knob2": 127, "knob3": 127, "knob4": 90, "knob5": 100, "knob6": 127, "knob7": 127, "knob8": 127, 
+                        "knob9": 0, "knob10": 0, "knob11": 0, "knob12": 0, "knob13": 0, "knob14": 0, "knob15": 60, "knob16": 0}   # These default values are edited by this application
+        self.target_knob_name = "knob16"  # Between 1 and 16 - changed when pressure pads are used to trigger a transition
         self.base_pitch = MIDI_NOTE_VALUES["C1"]   # Default pitch for pad sound is C
         self.octave_transpose = 0
         self.notes_on = []
@@ -112,12 +119,16 @@ class Arturia:
     def initialise_knobs_and_pads(self):
         status_byte = 0xB0 + self.MIDI_CHANNEL - 1  # control change on related midi channel
         for i in range(16):
-            data_byte_1 = self.KNOB_CC[i]
-            data_byte_2 = self.knob_values[i]
+            # knobs
+            knob_name = "knob" + str(i+1)
+            data_byte_1 = self.KNOB_CC[knob_name]
+            data_byte_2 = self.knob_values[knob_name]
             msg = [status_byte, data_byte_1, data_byte_2]
             self.midiports.midiout_arturia.send_message(msg)
-            self._updatePadColour(i, 2)
-            knobID = int(self.KNOB_SYSEX_ID[i])
+            # pads
+            pad_name = "pad" + str(i+1)
+            self._updatePadColour(pad_name, 2)
+            knobID = int(self.KNOB_SYSEX_ID[knob_name])
             self._updateKnobPosition(knobID, data_byte_2)
             #msg = [240, 0, 32, 107, 127, 66, 2, 0, 16, 112, 4, 247]  #makes first pad green as a test
             #self.midiports.midiout_arturia.send_message(msg)
@@ -141,34 +152,36 @@ class Arturia:
             return  #Ignore all aftertouch messages from pads
         # Messages requiring action
         if msg_type == "Control Change":
-            # For control changes, data_byte_1 refers to the controller number (which is set in Arturia Control Centre)
-            if data_byte_1 == 1:  #Mod wheel - used as another way of setting self.target_knob value
-                i = self.target_knob - 1
-                data_byte_1 = self.KNOB_CC[i]
-                self.knob_values[i] = data_byte_2
-                knob_id = int(self.KNOB_SYSEX_ID[i])
+            #Mod wheel - used as another way of setting self.target_knob_name value
+            if data_byte_1 == 1:
+                data_byte_1 = self.KNOB_CC[self.target_knob_name]
+                self.knob_values[self.target_knob_name] = data_byte_2
+                knob_id = int(self.KNOB_SYSEX_ID[self.target_knob_name])
                 self._updateKnobPosition(knob_id, data_byte_2)
                 return
-            if data_byte_1 in self.KNOB_CC:  #knob turned
-                i = self.KNOB_CC.index(data_byte_1)
+            # knob turn
+            knob_name = get_dict_key(self.KNOB_CC, data_byte_1)
+            if knob_name:
                 #Check knob value not undergoing transition - stop transition if so
-                if i + 1 in self.PAD_LINKED_TO_KNOB:
-                    iPad = self.PAD_LINKED_TO_KNOB.index(i+1)
-                    if iPad in threads:
-                        threads.remove(iPad)
-                        self._updatePadColour(iPad, 2)
-                        knob_id = int(self.KNOB_SYSEX_ID[i])
-                        self._updateKnobPosition(knob_id, self.knob_values[i])
+                if knob_name in self.PAD_LINKED_TO_KNOB:
+                    if knob_name in threads:
+                        threads.remove(knob_name)
+                        self._updatePadColour(knob_name, 2)
+                        # knob_id = int(self.KNOB_SYSEX_ID[knob_name])
+                        knob_id = self.KNOB_SYSEX_ID[knob_name]
+                        knob_value = self.knob_values[knob_name]
+                        self._updateKnobPosition(knob_id, knob_value)
                         return 0
                 #Send knob value            
-                self.knob_values[i] = data_byte_2
+                self.knob_values[knob_name] = data_byte_2
             msg = [status_byte, data_byte_1, data_byte_2]
             self.midiports.midiout_loopbe.send_message(msg)
             return
         if msg_type == "Note On":
             print(data_byte_1)
-            if data_byte_1 in self.PAD_ROTARY_SWITCH:  # Pressed pad for switching organ rotary
-                status_byte = 0xB0 + self.MIDI_CHANNEL - 1  # Change status_byte to CC on specified midi channel (must be same as organ channel)
+            pad_name = get_dict_key(self.PAD_NOTE_VALUES, data_byte_1)
+            if pad_name and pad_name in self.PAD_ROTARY_SWITCH:  # Pressed pad for switching organ rotary
+                status_byte = 0xB0 + self.MIDI_CHANNEL_ORGAN - 1  # Change status_byte to CC on specified midi channel (must be same as organ channel)
                 data_byte_1 = 1  # Change to CC1 (normally mod wheel)
                 if self.rotary_on == True:
                     self.rotary_on = False
@@ -179,11 +192,10 @@ class Arturia:
                 msg = [status_byte, data_byte_1, data_byte_2]
                 self.midiports.midiout_loopbe.send_message(msg)
                 return
-            elif data_byte_1 in self.PAD_NOTE_VALUES:  # Pressed another pad
-                iPad = self.PAD_NOTE_VALUES.index(data_byte_1)
+            elif pad_name:  # Pressed another pad
                 transitionTime = 128 - data_byte_2
                 transitionTime = transitionTime*transitionTime
-                t = threading.Thread(target=self._makeTransition, args=(iPad, transitionTime))
+                t = threading.Thread(target=self._makeTransition, args=(pad_name, transitionTime))
                 t.start()
                 return
             elif data_byte_1 >= MIDI_NOTE_VALUES["C3"] and data_byte_1 < MIDI_NOTE_VALUES["C4"]:   # Pressed key in bottom octave on Arturia Minilab
@@ -210,48 +222,49 @@ class Arturia:
                 # self.midiports.midiout_loopbe.send_message(msg)
                 print(f"Note On for {note_value_to_name(data_byte_1)} is outside of expected range (C3-B4)")
                 return
-        # If reaches here, log unexpected message before sending
-        print("Received unexpected midi input: "+str(status_byte)+" "+str(data_byte_1)+" "+str(data_byte_2))
+        # If reaches here, log unexpected message after sending
         msg = [status_byte, data_byte_1, data_byte_2]
         self.midiports.midiout_loopbe.send_message(msg)
+        print(f"ARTERIA: UNEXPECTED INPUT: {msg}")
 
-    def _makeTransition(self, iPad, t):
+
+    def _makeTransition(self, pad_name, t):
         # Check if thread already running for this pad
-        if iPad in threads:
-            threads.remove(iPad)
-            self._updatePadColour(iPad, 2)
+        if pad_name in threads:
+            threads.remove(pad_name)
+            self._updatePadColour(pad_name, 2)
             return 0
         else:
-            threads.append(iPad)
+            threads.append(pad_name)
         # Define value variables
-        knobNumber = self.PAD_LINKED_TO_KNOB[iPad]
-        i = knobNumber - 1
-        initialValue = self.knob_values[i]
-        targetValue = self.knob_values[self.target_knob-1]
+
+        knob_name = self.PAD_LINKED_TO_KNOB[pad_name]
+        initialValue = self.knob_values[knob_name]
+        targetValue = self.knob_values[self.target_knob_name]
         incrementValue = (targetValue-initialValue)/self.TRANSITION_STEPS
-        status_byte = 175 + self.MIDI_CHANNEL
-        data_byte_1 = self.KNOB_CC[i]
+        status_byte = 0xB0 + self.MIDI_CHANNEL - 1 # control change on specified midi channel
+        data_byte_1 = self.KNOB_CC[knob_name]
         # Send midi messages using loop
         j = 1
-        while j <= self.TRANSITION_STEPS and iPad in threads:
+        while j <= self.TRANSITION_STEPS and pad_name in threads:
             tempValue = initialValue + (j*incrementValue)
             data_byte_2 = int(tempValue)
             msg = [status_byte, data_byte_1, data_byte_2]
             self.midiports.midiout_loopbe.send_message(msg)
-            self.knob_values[i] = data_byte_2
-            self._updatePadColour(iPad, j)
+            self.knob_values[knob_name] = data_byte_2
+            self._updatePadColour(pad_name, j)
             time.sleep(t*0.00003)        
             j += 1
         # Update knob position
-        knobID = int(self.KNOB_SYSEX_ID[i])
-        self._updateKnobPosition(knobID, self.knob_values[i])
-        if iPad in threads:
-            threads.remove(iPad)
+        knobID = int(self.KNOB_SYSEX_ID[knob_name])
+        self._updateKnobPosition(knobID, self.knob_values[knob_name])
+        if pad_name in threads:
+            threads.remove(pad_name)
     
     def _sendAllNotesOff(self):
-        for n in self.notes_on:
+        for note in self.notes_on:
             status_byte = 0x80 + self.MIDI_CHANNEL - 1   # Note Off on specified midi channel
-            data_byte_1 = n
+            data_byte_1 = note
             data_byte_2 = 0
             msg = [status_byte, data_byte_1, data_byte_2]
             self.midiports.midiout_loopbe.send_message(msg)
@@ -262,11 +275,11 @@ class Arturia:
         msg = [0xF0, 0, 32, 107, 127, 66, 2, 0, 0, knobID, knobValue, 247]
         self.midiports.midiout_arturia.send_message(msg)
 
-    def _updatePadColour(self, iPad, j):
+    def _updatePadColour(self, pad_name, j):
         # Sends a SysEx message back to Arturia
-        padNo = iPad + 112
+        padNo = self.PAD_NOTE_VALUES[pad_name] + 112  # note: this only works while pad notes start at 0
         padNo = int(padNo)
-        c = self.PAD_COLOURS[iPad]
+        c = self.PAD_COLOURS[pad_name]
         if j % 2 > 0:
             if c == 0:
                 c = 4  # green
@@ -304,6 +317,17 @@ def note_value_to_name(value):
         if val == value:
             return key
     return None
+
+def get_dict_key(my_dict, my_val):
+    # list out key and values
+    key_list = list(my_dict.keys())
+    val_list = list(my_dict.values())
+    # return key which matches value (or None if not found)
+    try:
+        position = val_list.index(my_val)
+        return key_list[position]
+    except ValueError:
+        return None
 
 # MAIN PROCEDURE
 threads = []
