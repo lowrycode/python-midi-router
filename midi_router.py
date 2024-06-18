@@ -50,6 +50,7 @@ class Roland:
         # Define constants
         self.NAME = "Roland"
         self.MIDI_CHANNEL = 1
+        self.MIDI_CHANNEL_BASS = 2
         self.BASS_UPPER_KEY = MIDI_NOTE_VALUES["F3"]   # F below middle C
         # Define variables
         self.exp_pedal_value = 0
@@ -69,18 +70,17 @@ class Roland:
         msg_channel = (status_byte%16) + 1   # alternatively use bitwise operation to extract last 4 bits: msg_channel = status_byte & 0x0F
         # Catch messages to ignore
         if msg_type == "System Message":
-            print(f"Unexpected system message received from {self.NAME}")
+            print(f"UNEXPECTED SYSTEM MESSAGE: from {self.NAME}")
             return
-        if msg_channel != self.MIDI_CHANNEL: 
-            print(f"Unexpected message received from {self.NAME} on channel {msg_channel}")
+        if msg_channel != self.MIDI_CHANNEL and msg_channel != self.MIDI_CHANNEL_BASS: 
+            print(f"UNEXPECTED CHANNEL MESSAGE: from {self.NAME} on channel {msg_channel}")
             return
         # Update exp_pedal_value
         if msg_type == "Control Change" and data_byte_1 == 7:      # control change from expression pedal
             self.exp_pedal_value = data_byte_2
         # Tweak velocities if bass mode on
-        if self.bass_mode and msg_type == "Note On" and data_byte_1 <= self.BASS_UPPER_KEY:
+        if self.bass_mode and msg_type == "Note On" and data_byte_1 <= self.BASS_UPPER_KEY and msg_channel == self.MIDI_CHANNEL:
             data_byte_2 = int(data_byte_2 * (127 - self.exp_pedal_value) / 127)
-            print(f"Edit Value: {str(data_byte_2)}")
         # Forward midi message
         msg = [status_byte, data_byte_1, data_byte_2]
         self.midiports.midiout_loopbe.send_message(msg)
@@ -107,7 +107,7 @@ class Arturia:
         # Define variables
         self.rotary_on = False
         self.knob_values = {"knob1": 127, "knob2": 127, "knob3": 127, "knob4": 90, "knob5": 100, "knob6": 127, "knob7": 127, "knob8": 127, 
-                        "knob9": 0, "knob10": 0, "knob11": 0, "knob12": 0, "knob13": 0, "knob14": 0, "knob15": 60, "knob16": 0}   # These default values are edited by this application
+                        "knob9": 90, "knob10": 0, "knob11": 0, "knob12": 0, "knob13": 0, "knob14": 0, "knob15": 60, "knob16": 0}   # These default values are edited by this application
         self.target_knob_name = "knob16"  # Between 1 and 16 - changed when pressure pads are used to trigger a transition
         self.base_pitch = MIDI_NOTE_VALUES["C1"]   # Default pitch for pad sound is C
         self.octave_transpose = 0
@@ -123,13 +123,16 @@ class Arturia:
             knob_name = "knob" + str(i+1)
             data_byte_1 = self.KNOB_CC[knob_name]
             data_byte_2 = self.knob_values[knob_name]
+            knobID = int(self.KNOB_SYSEX_ID[knob_name])
+            self._updateKnobPosition(knobID, data_byte_2)
             msg = [status_byte, data_byte_1, data_byte_2]
             self.midiports.midiout_arturia.send_message(msg)
+            self.midiports.midiout_loopbe.send_message(msg)
             # pads
             pad_name = "pad" + str(i+1)
             self._updatePadColour(pad_name, 2)
-            knobID = int(self.KNOB_SYSEX_ID[knob_name])
-            self._updateKnobPosition(knobID, data_byte_2)
+            
+
             #msg = [240, 0, 32, 107, 127, 66, 2, 0, 16, 112, 4, 247]  #makes first pad green as a test
             #self.midiports.midiout_arturia.send_message(msg)
 
@@ -139,10 +142,10 @@ class Arturia:
         msg_channel = (status_byte%16) + 1
         # Catch messages to ignore
         if msg_type == "System Message":
-            print(f"Unexpected system message received from {self.NAME}")
+            print(f"UNEXPECTED SYSTEM MESSAGE: from {self.NAME}")
             return
         if msg_channel != self.MIDI_CHANNEL: 
-            print(f"Message received from {self.NAME} on unexpected channel ({msg_channel})")
+            print(f"UNEXPECTED CHANNEL MESSAGE: from {self.NAME} on channel ({msg_channel})")
             return
         if msg_type == "Note Off":
             return
@@ -158,6 +161,8 @@ class Arturia:
                 self.knob_values[self.target_knob_name] = data_byte_2
                 knob_id = int(self.KNOB_SYSEX_ID[self.target_knob_name])
                 self._updateKnobPosition(knob_id, data_byte_2)
+                msg = [status_byte, data_byte_1, data_byte_2]
+                self.midiports.midiout_loopbe.send_message(msg)
                 return
             # knob turn
             knob_name = get_dict_key(self.KNOB_CC, data_byte_1)
@@ -178,7 +183,6 @@ class Arturia:
             self.midiports.midiout_loopbe.send_message(msg)
             return
         if msg_type == "Note On":
-            print(data_byte_1)
             pad_name = get_dict_key(self.PAD_NOTE_VALUES, data_byte_1)
             if pad_name and pad_name in self.PAD_ROTARY_SWITCH:  # Pressed pad for switching organ rotary
                 status_byte = 0xB0 + self.MIDI_CHANNEL_ORGAN - 1  # Change status_byte to CC on specified midi channel (must be same as organ channel)
@@ -220,12 +224,12 @@ class Arturia:
             else:
                 # msg = [status_byte, data_byte_1, data_byte_2]
                 # self.midiports.midiout_loopbe.send_message(msg)
-                print(f"Note On for {note_value_to_name(data_byte_1)} is outside of expected range (C3-B4)")
+                print(f"UNEXPECTED CHANNEL MESSAGE: Note On for {note_value_to_name(data_byte_1)} is outside of expected range (C3-B4)")
                 return
         # If reaches here, log unexpected message after sending
         msg = [status_byte, data_byte_1, data_byte_2]
         self.midiports.midiout_loopbe.send_message(msg)
-        print(f"ARTERIA: UNEXPECTED INPUT: {msg}")
+        print(f"UNEXPECTED CHANNEL MESSAGE: {msg} from Arteria")
 
 
     def _makeTransition(self, pad_name, t):
